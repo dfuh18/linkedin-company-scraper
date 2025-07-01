@@ -1,0 +1,58 @@
+Accenture
+Adobe
+Airbnb
+Alibaba Group
+Amazon
+Anduril Industries
+Apple
+Arrival
+Capgemini
+Cisco Systems
+Citadel
+Coupa Software
+Databricks
+DeepMind
+Deloitte
+EQBank
+EY
+Equiton
+Fisker Inc.
+Ford
+General Motors
+Google
+HP Inc.
+Hugging Face
+IBM
+Intel
+KPMG
+Lucid
+McKinsey & Company
+Meta
+Microsoft
+NVIDIA
+Netflix
+OpenAI
+Oracle
+Palantir
+PayPal
+Plaid
+PointClickCare
+PwC
+Rivian
+Robinhood
+Roku
+Salesforce
+Samsung Electronics
+Scale AI
+Shopify
+Snowflake
+Square
+Stripe
+Tesla
+Toast
+Uber
+Unity Technologies
+Volkswagen Group
+Wealthsimple
+Zinnov
+Zoox

@@ -1,0 +1,16 @@
+# Core packages for LinkedIn scraping
+selenium==4.34.0
+webdriver-manager==4.0.2
+linkedin-scraper==2.11.5
+
+# Database and API
+supabase==2.16.0
+
+# Environment variables
+python-dotenv==1.1.1
+
+# HTTP requests (required by other packages)
+requests==2.32.4
+
+# XML parsing (required by linkedin-scraper)
+lxml==6.0.0
