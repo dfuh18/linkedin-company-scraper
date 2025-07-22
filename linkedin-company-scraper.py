@@ -258,23 +258,77 @@ def scrape_company(company_url: str, driver=None):
             driver.quit()
 
 
+def save_progressive_json(new_data, filename, append=True):
+    """Save data progressively to JSON file - either append to existing or overwrite."""
+    try:
+        existing_data = []
+
+        # If appending and file exists, load existing data
+        if append and os.path.exists(filename):
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    if not isinstance(existing_data, list):
+                        existing_data = []
+            except (json.JSONDecodeError, FileNotFoundError):
+                existing_data = []
+
+        # Add new data
+        if isinstance(new_data, list):
+            existing_data.extend(new_data)
+        else:
+            existing_data.append(new_data)
+
+        # Save updated data
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, indent=2, ensure_ascii=False)
+
+        print(f"📄 Saved {len(existing_data)} companies to {filename}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error saving to {filename}: {e}")
+        return False
+
+
 def scrape_multiple_companies(
-    company_urls: list, delay_range=(2, 5), mode="single_session"
+    company_urls: list,
+    delay_range=(2, 5),
+    mode="single_session",
+    progressive_save_file=None,
 ):
     """
-    Scrape multiple companies with different session modes.
+    Scrape multiple companies with different session modes and progressive saving.
 
     Args:
         company_urls: List of LinkedIn company URLs to scrape
         delay_range: Tuple of min/max seconds to wait between requests
         mode: Either "single_session" or "per_company"
+        progressive_save_file: Optional filename to save progress after each company
     """
     results = []
 
-    if mode == "per_company":
-        return scrape_multiple_companies_per_session(company_urls, delay_range)
+    # Set up progressive saving
+    if progressive_save_file:
+        # Ensure directory exists
+        os.makedirs(
+            (
+                os.path.dirname(progressive_save_file)
+                if os.path.dirname(progressive_save_file)
+                else "."
+            ),
+            exist_ok=True,
+        )
+        # Initialize with empty file
+        save_progressive_json([], progressive_save_file, append=False)
+        print(f"📄 Progressive saving enabled: {progressive_save_file}")
 
-    # Single session mode with recovery
+    if mode == "per_company":
+        return scrape_multiple_companies_per_session(
+            company_urls, delay_range, progressive_save_file
+        )
+
+    # Single session mode with recovery and progressive saving
     driver = None
 
     try:
@@ -312,7 +366,16 @@ def scrape_multiple_companies(
 
                 if company_data:
                     results.append(company_data)
-                    print(f"✅ Successfully scraped: {company_data.get('name', 'Unknown')}")
+                    print(
+                        f"✅ Successfully scraped: {company_data.get('name', 'Unknown')}"
+                    )
+
+                    # Progressive save after each successful scrape
+                    if progressive_save_file:
+                        save_progressive_json(
+                            company_data, progressive_save_file, append=True
+                        )
+
                 else:
                     print(f"❌ Failed to scrape data for {url}")
 
@@ -344,11 +407,19 @@ def scrape_multiple_companies(
             except Exception as e:
                 print(f"⚠️  Error closing driver: {e}")
 
+    # Final summary
+    if progressive_save_file and results:
+        print(
+            f"\n✅ Progressive saving complete: {len(results)} companies saved to {progressive_save_file}"
+        )
+
     return results
 
 
-def scrape_multiple_companies_per_session(company_urls: list, delay_range=(2, 5)):
-    """Scrape multiple companies with a new driver session for each company (legacy mode)."""
+def scrape_multiple_companies_per_session(
+    company_urls: list, delay_range=(2, 5), progressive_save_file=None
+):
+    """Scrape multiple companies with a new driver session for each company (legacy mode) with progressive saving."""
     results = []
 
     for i, url in enumerate(company_urls):
@@ -364,6 +435,12 @@ def scrape_multiple_companies_per_session(company_urls: list, delay_range=(2, 5)
             if company_data:
                 results.append(company_data)
                 print(f"✅ Successfully scraped: {company_data.get('name', 'Unknown')}")
+
+                # Progressive save after each successful scrape
+                if progressive_save_file:
+                    save_progressive_json(
+                        company_data, progressive_save_file, append=True
+                    )
 
         finally:
             # Always close the driver after each company
@@ -681,9 +758,17 @@ def main():
 
         print(f"\nStarting to scrape {len(company_urls)} companies in {mode} mode...")
 
-        # Scrape companies with user-specified delays and mode
+        # Prepare progressive save file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs("data/companies", exist_ok=True)
+        progressive_file = f"data/companies/companies_data_{timestamp}.json"
+
+        # Scrape companies with user-specified delays, mode, and progressive saving
         results = scrape_multiple_companies(
-            company_urls, delay_range=(args.delay, args.delay + 2), mode=mode
+            company_urls,
+            delay_range=(args.delay, args.delay + 2),
+            mode=mode,
+            progressive_save_file=progressive_file,
         )
 
     except Exception as e:
@@ -692,13 +777,8 @@ def main():
 
     # Process results
     if results:
-        # Save results to JSON file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"data/companies/companies_data_{timestamp}.json"
-        save_to_json(results, filename)
-
         print(f"\n✅ Scraping completed! Processed {len(results)} companies.")
-        print(f"📁 Data saved to: {filename}")
+        print(f"📁 Data progressively saved to: {progressive_file}")
 
         # Print company IDs summary
         print("\n=== SCRAPED COMPANY SUMMARY ===")
@@ -730,7 +810,23 @@ def main():
                 "❌ No company IDs found. Check the company URLs or LinkedIn page structure."
             )
     else:
-        print("\n❌ No companies were successfully scraped.")
+        print("\n❌ No companies were successfully scraped in memory.")
+
+        # Check if progressive file has any data
+        if os.path.exists(progressive_file):
+            try:
+                with open(progressive_file, "r", encoding="utf-8") as f:
+                    saved_data = json.load(f)
+                if saved_data:
+                    print(
+                        f"✅ However, {len(saved_data)} companies were progressively saved to: {progressive_file}"
+                    )
+                else:
+                    print("📁 Progressive save file is empty.")
+            except Exception as e:
+                print(f"❌ Could not read progressive save file: {e}")
+        else:
+            print("📁 No progressive save file found.")
 
     print(
         f"\n💡 To scrape more companies, use --batch-size parameter (e.g., --batch-size 10 or --batch-size 20)"

@@ -131,7 +131,7 @@ def load_company_data():
 
 
 def run_company_scraper_integrated(companies: List[str]):
-    """Run the robust company scraper for selected companies with unified JSON output"""
+    """Run the robust company scraper for selected companies with progressive saving"""
     try:
         # Save companies to file first
         save_companies_to_file(companies)
@@ -143,25 +143,31 @@ def run_company_scraper_integrated(companies: List[str]):
             linkedin_url = linkedin_company_scraper.company_name_to_linkedin_url(company)
             company_urls.append(linkedin_url)
 
-        # Prepare the unified output file path
+        # Prepare the progressive save file path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         os.makedirs("data/companies", exist_ok=True)
-        unified_filepath = f"data/companies/companies_data_{timestamp}.json"
+        progressive_filepath = f"data/companies/companies_data_{timestamp}.json"
 
-        # Use the robust scraper with session recovery
+        # Use the robust scraper with session recovery and progressive saving
         results = linkedin_company_scraper.scrape_multiple_companies(
             company_urls, 
             delay_range=(3, 6),  # Reasonable delays
-            mode="single_session"  # Use single session with recovery
+            mode="single_session",  # Use single session with recovery
+            progressive_save_file=progressive_filepath  # Enable progressive saving
         )
 
         if results:
-            # Save all results to a single unified JSON file
-            with open(unified_filepath, "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2, ensure_ascii=False)
-            
-            return True, f"Successfully scraped {len(results)} companies and saved to {unified_filepath}"
+            return True, f"Successfully scraped {len(results)} companies with progressive saving to {progressive_filepath}"
         else:
+            # Even if no results, check if progressive file has data
+            if os.path.exists(progressive_filepath):
+                try:
+                    with open(progressive_filepath, "r", encoding="utf-8") as f:
+                        saved_data = json.load(f)
+                    if saved_data:
+                        return True, f"Partial success: {len(saved_data)} companies saved to {progressive_filepath}"
+                except:
+                    pass
             return False, "No companies were successfully scraped"
 
     except Exception as e:
@@ -205,8 +211,10 @@ def step1_job_search():
                 "Canada",
                 "Germany",
                 "Netherlands",
+                "Switzerland",
+                "Europe"
             ],
-            default=["United States", "Remote"],
+            default=["Europe", "Remote"],
             help="Select one or more locations to search in",
         )
 
@@ -308,9 +316,9 @@ def step1_job_search():
     with col2:
         st.subheader("Quick Actions")
 
-        # Load previous results
+        # Load previous job results
         if st.button(
-            "📂 Load Previous Results",
+            "📂 Load Previous Job Results",
             help="Load the most recent job search results",
         ):
             saved_jobs = load_saved_jobs()
@@ -321,6 +329,20 @@ def step1_job_search():
                 st.rerun()
             else:
                 st.warning("No previous job data found")
+
+        # Load previous company data
+        if st.button(
+            "🏢 Load Previous Company Data", 
+            help="Load existing company data for analysis"
+        ):
+            company_data = load_company_data()
+            if company_data:
+                st.session_state.company_data = company_data
+                st.success(f"✅ Loaded {len(company_data)} companies from previous scraping")
+                st.session_state.step = 4
+                st.rerun()
+            else:
+                st.warning("No previous company data found")
 
         # Search button
         if st.button(
@@ -677,6 +699,7 @@ def step3_company_scraping():
         # Show progress
         progress_bar = st.progress(0)
         status_text = st.empty()
+        result_container = st.empty()
 
         try:
             companies_to_scrape = st.session_state.selected_companies[:scrape_limit]
@@ -685,46 +708,87 @@ def step3_company_scraping():
             )
 
             # Call the integrated scraper
-            success, message = run_company_scraper_integrated(companies_to_scrape)
+            with st.spinner("Scraping in progress... This may take several minutes."):
+                success, message = run_company_scraper_integrated(companies_to_scrape)
 
+            # Clear the spinner and show results
             if success:
                 progress_bar.progress(1.0)
-                status_text.text("✅ Scraping completed!")
+                status_text.text("✅ Scraping completed successfully!")
 
-                st.success(message)
-
-                # Load the scraped data
+                # Load the scraped data immediately
                 st.session_state.company_data = load_company_data()
 
-                # Show preview if data available
-                if st.session_state.company_data:
-                    st.subheader("📊 Preview of Scraped Data")
-                    preview_df = pd.DataFrame(st.session_state.company_data)
-                    available_cols = [
-                        col
-                        for col in [
-                            "name",
-                            "industry",
-                            "company_size",
-                            "headquarters",
-                            "website",
-                        ]
-                        if col in preview_df.columns
-                    ]
-                    if available_cols:
-                        st.dataframe(preview_df[available_cols].head())
+                with result_container.container():
+                    st.success(message)
 
-                # Auto-advance to results
-                time.sleep(2)
-                st.session_state.step = 4
-                st.rerun()
+                    # Show preview if data available
+                    if st.session_state.company_data:
+                        st.subheader("📊 Preview of Scraped Data")
+                        preview_df = pd.DataFrame(st.session_state.company_data)
+                        available_cols = [
+                            col
+                            for col in [
+                                "name",
+                                "industry",
+                                "company_size",
+                                "headquarters",
+                                "website",
+                            ]
+                            if col in preview_df.columns
+                        ]
+                        if available_cols:
+                            st.dataframe(preview_df[available_cols].head())
+
+                    # Provide navigation options instead of auto-advance
+                    st.info("🎉 Scraping completed! Choose your next step:")
+                    
+                    col_nav1, col_nav2 = st.columns(2)
+                    with col_nav1:
+                        if st.button("📊 View Results & Analysis", type="primary", key="goto_analysis"):
+                            st.session_state.step = 4
+                            st.rerun()
+                    
+                    with col_nav2:
+                        if st.button("🔄 Scrape More Companies", key="scrape_more"):
+                            st.session_state.step = 2
+                            st.rerun()
+
             else:
+                progress_bar.progress(0.0)
                 status_text.text("❌ Scraping failed")
-                st.error(f"❌ {message}")
+                
+                with result_container.container():
+                    st.error(f"❌ {message}")
+                    
+                    # Check if partial data was saved
+                    partial_data = load_company_data()
+                    if partial_data:
+                        st.warning(f"⚠️ Partial data available: {len(partial_data)} companies were saved before the failure.")
+                        st.session_state.company_data = partial_data
+                        
+                        if st.button("📊 View Partial Results", key="view_partial"):
+                            st.session_state.step = 4
+                            st.rerun()
 
         except Exception as e:
-            st.error(f"❌ Scraping error: {str(e)}")
-            status_text.text("❌ Scraping failed")
+            progress_bar.progress(0.0)
+            status_text.text("❌ Scraping failed with error")
+            
+            with result_container.container():
+                st.error(f"❌ Scraping error: {str(e)}")
+                
+                # Still check for partial data in case of unexpected errors
+                try:
+                    partial_data = load_company_data()
+                    if partial_data:
+                        st.info(f"ℹ️ Found existing data: {len(partial_data)} companies")
+                        if st.button("📊 Load Existing Data", key="load_existing"):
+                            st.session_state.company_data = partial_data
+                            st.session_state.step = 4
+                            st.rerun()
+                except:
+                    pass
 
     # Navigation
     st.subheader("🎯 Navigation")
@@ -1289,6 +1353,28 @@ def main():
     if st.sidebar.button("Step 4: View Results"):
         st.session_state.step = 4
         st.rerun()
+
+    # Quick load options
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📂 Quick Load")
+    
+    if st.sidebar.button("📊 Load Job Data"):
+        saved_jobs = load_saved_jobs()
+        if saved_jobs:
+            st.session_state.jobs_data = saved_jobs
+            st.session_state.step = 2
+            st.rerun()
+        else:
+            st.sidebar.error("No job data found")
+    
+    if st.sidebar.button("🏢 Load Company Data"):
+        company_data = load_company_data()
+        if company_data:
+            st.session_state.company_data = company_data
+            st.session_state.step = 4
+            st.rerun()
+        else:
+            st.sidebar.error("No company data found")
 
     # App info
     st.sidebar.markdown("---")
