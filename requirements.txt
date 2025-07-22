@@ -2,9 +2,10 @@
 selenium==4.34.0
 webdriver-manager==4.0.2
 linkedin-scraper==2.11.5
-
-# Database and API
-supabase==2.16.0
+linkedin-jobs-scraper==5.0.2
+streamlit>=1.28.0
+pandas>=1.5.0
+plotly>=5.0.0
 
 # Environment variables
 python-dotenv==1.1.1
